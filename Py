@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+# Responsible AI Inspector - generates short write-ups (what's happening, what's problematic, one improvement)
+# Usage: edit the CASES list or call generate_reports(cases) from other code.
+
+from typing import List, Dict
+import re
+import textwrap
+
+CASES: List[Dict[str, str]] = [
+    {
+        "title": "Hiring Bot",
+        "description": (
+            "A company uses an AI to screen job applicants. It tends to reject more female applicants "
+            "with career gaps (e.g., maternity leave). The system ranks resumes and filters candidates "
+            "before any human sees them."
+        ),
+    },
+    {
+        "title": "School Proctoring AI",
+        "description": (
+            "An online proctoring system flags students as 'cheating' based on eye movement and facial "
+            "behavior. It disproportionately flags neurodivergent students and those with poor webcams."
+        ),
+    },
+]
+
+ISSUE_KEYWORDS = {
+    "fairness": [
+        r"\bfemale\b", r"\bgender\b", r"\bsex\b", r"\bdiscrim", r"\bbias\b", r"\bneurodivergent\b",
+        r"\bracial\b", r"\bage\b", r"\bcareer gap\b", r"\bmaternity\b"
+    ],
+    "privacy": [
+        r"\bdata\b", r"\bpersonal\b", r"\bencrypt", r"\bencryption\b", r"\bprivacy\b", r"\bcamera\b",
+        r"\bmicrophone\b", r"\bwebcam\b"
+    ],
+    "accountability": [
+        r"\blog\b", r"\bexplain", r"\btransparen", r"\bhuman review\b", r"\bfinal judge\b", r"\bappeal\b",
+        r"\baudit\b", r"\btrace\b", r"\bmlops\b"
+    ],
+    "robustness": [
+        r"\binternet\b", r"\bconnection\b", r"\bnoise\b", r"\bcamera\b", r"\bwebcam\b", r"\bhardware\b"
+    ]
+}
+
+IMPROVEMENTS_BY_ISSUE = {
+    "fairness": "Retrain or calibrate the model with balanced, representative data; add fairness audits and human-in-the-loop review for borderline cases.",
+    "privacy": "Minimize data collection, apply strong encryption and access controls, and give users clear consent and data-use notices.",
+    "accountability": "Log model decisions, enable explainability (model cards / decision traces), and require human review before punitive actions.",
+    "robustness": "Use multi-signal detection, tolerate noisy inputs, and fallback to human review when signal quality is low."
+}
+
+def detect_issues(text: str) -> List[str]:
+    text_lower = text.lower()
+    found = set()
+    for issue, patterns in ISSUE_KEYWORDS.items():
+        for pat in patterns:
+            if re.search(pat, text_lower):
+                found.add(issue)
+                break
+    return sorted(found)
+
+def summarize_happening(case: Dict[str, str]) -> str:
+    title = case.get("title", "Untitled Case")
+    desc = case.get("description", "").strip()
+    return f"**What’s happening:** {desc}"
+
+def summarize_problem(issues: List[str], desc: str) -> str:
+    if not issues:
+        # fallback heuristic checks
+        if len(desc) < 80:
+            return "No clear issues detected from the description; recommend a full audit anyway."
+        return "Potential issues not confidently detected; recommend fairness, privacy, and accountability checks."
+    parts = []
+    for issue in issues:
+        if issue == "fairness":
+            parts.append("The system may be biased: it treats certain groups unfairly (e.g., gender, neurodiversity).")
+        elif issue == "privacy":
+            parts.append("User privacy could be at risk due to sensitive data collection (cameras, personal data).")
+        elif issue == "accountability":
+            parts.append("Lack of logging or human oversight may make it hard to trace or challenge decisions.")
+        elif issue == "robustness":
+            parts.append("The system may be brittle to poor hardware or network conditions, causing false positives.")
+    return " ".join(parts)
+
+def choose_improvement(issues: List[str]) -> str:
+    if not issues:
+        return "Perform a full independent audit (fairness, privacy, robustness, and accountability) and add human review gates."
+    # prefer fairness/accountability improvements if present
+    priority = ["fairness", "accountability", "privacy", "robustness"]
+    chosen = []
+    for p in priority:
+        if p in issues:
+            chosen.append(IMPROVEMENTS_BY_ISSUE[p])
+            break
+    if not chosen:
+        # pick first issue arbitrarily
+        chosen.append(IMPROVEMENTS_BY_ISSUE[issues[0]])
+    return chosen[0]
+
+def to_blog(title: str, happening: str, problem: str, improvement: str) -> str:
+    header = f"# 🕵️ Responsible AI Inspector — {title}\n"
+    body = (
+        f"{happening}\n\n"
+        f"**What’s problematic:** {problem}\n\n"
+        f"**One improvement idea:** {improvement}\n\n"
+        f"✨ *Inspector's note:* Keep humans in the loop, audit regularly, and design for the people affected.\n"
+    )
+    return header + body
+
+def generate_reports(cases: List[Dict[str, str]]) -> str:
+    reports = []
+    for case in cases:
+        desc = case.get("description", "")
+        issues = detect_issues(desc)
+        happening = summarize_happening(case)
+        problem = summarize_problem(issues, desc)
+        improvement = choose_improvement(issues)
+        reports.append(to_blog(case.get("title", "Case"), happening, problem, improvement))
+    return "\n---\n\n".join(reports)
+
+if __name__ == "__main__":
+    # Generate reports for default CASES; to use custom cases, modify CASES above or import this file and call generate_reports.
+    output = generate_reports(CASES)
+    print(output)
